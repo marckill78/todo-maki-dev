@@ -1,9 +1,9 @@
 /* sw.js — Service Worker: App-Shell offline cachen.
    Daten liegen in IndexedDB (nicht hier). Cache-Version bei Änderungen hochzählen. */
-const CACHE = "maki-v16";
+const CACHE = "maki-v17";
 const ASSETS = [
-  "./", "./index.html", "./styles.css?v=16",
-  "./js/icons.js?v=16", "./js/db.js?v=16", "./js/sync.js?v=16", "./js/store.js?v=16", "./js/app.js?v=16",
+  "./", "./index.html", "./styles.css?v=17",
+  "./js/icons.js?v=17", "./js/db.js?v=17", "./js/sync.js?v=17", "./js/store.js?v=17", "./js/app.js?v=17",
   "./manifest.webmanifest",
   "./assets/icon-192.png", "./assets/icon-512.png", "./assets/icon-maskable.png"
 ];
@@ -17,9 +17,12 @@ self.addEventListener("activate", (e) => {
       .then(() => self.clients.claim())
   );
 });
-// Network-first: online immer die neueste Version, offline aus dem Cache.
+// Network-first NUR für eigene Dateien. Fremde Domains (Google/Firebase-Auth,
+// Firestore, CDN) werden NICHT angefasst — sonst scheitert die Anmeldung.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;  // Cross-Origin durchlassen
   e.respondWith(
     fetch(e.request).then(res => {
       const copy = res.clone();
