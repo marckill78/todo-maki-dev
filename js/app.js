@@ -71,6 +71,34 @@
   const REPEAT_LABEL = { daily: "Täglich", weekly: "Wöchentlich", monthly: "Monatlich", yearly: "Jährlich" };
   const REPEAT_UNIT  = { daily: "Tage", weekly: "Wochen", monthly: "Monate", yearly: "Jahre" };
 
+  // Fortschritts-Farbe: 0% rot → 50% gelb → 100% grün (sauberer HSL-Verlauf)
+  const pctColor = (p) => `hsl(${Math.round((p || 0) * 1.2)} 72% 45%)`;
+
+  // Liste per Drag sortierbar machen (Pointer-Events, Maus + Touch).
+  // handleSel = Greifelement, itemSel = sortierbares Element mit data-Attribut "key".
+  function makeSortable(ul, handleSel, itemSel, key, onReorder) {
+    let drag = null;
+    ul.addEventListener("pointerdown", (e) => {
+      const h = e.target.closest(handleSel); if (!h) return;
+      const li = h.closest(itemSel); if (!li) return;
+      e.preventDefault(); drag = li; li.classList.add("dragging");
+      h.setPointerCapture(e.pointerId);
+    });
+    ul.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      const sibs = [...ul.querySelectorAll(itemSel + ":not(.dragging)")];
+      const after = sibs.find(el => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+      if (after) ul.insertBefore(drag, after); else ul.appendChild(drag);
+    });
+    const end = () => {
+      if (!drag) return;
+      drag.classList.remove("dragging"); drag = null;
+      onReorder([...ul.querySelectorAll(itemSel)].map(li => li.dataset[key]));
+    };
+    ul.addEventListener("pointerup", end);
+    ul.addEventListener("pointercancel", end);
+  }
+
   const prioBadge = (p) => p
     ? `<span class="prio-badge" style="background:${PRIO_COLOR[p]}" title="Priorität: ${PRIO_LABEL[p]}">P${p}</span>`
     : "";
@@ -160,8 +188,16 @@
           ${subCount ? `<span class="meta">☑ ${t.subtasks.filter(s => s.done).length}/${subCount}</span>` : ""}
           ${area && view.name !== "area" ? `<span class="meta meta-area" style="--chip:${area.color}">${area.emoji} ${esc(area.name)}</span>` : ""}
         </div>
-        ${subCount ? `<div class="progress"><span style="width:${pct}%"></span></div>` : ""}
+        ${subCount ? `<div class="progress"><span style="width:${pct}%;background:${pctColor(pct)}"></span></div>` : ""}
+        ${subCount ? `<ul class="task-subs">${(t.subtasks || []).map(subRowList).join("")}</ul>` : ""}
       </div>
+    </li>`;
+  }
+  // Kompakte Unteraufgabe für die Listenansicht (abhakbar, ohne Bearbeiten)
+  function subRowList(s) {
+    return `<li class="sub-inline ${s.done ? "done" : ""}" data-subrow="${s.id}">
+      <button class="check xs" data-sub-check><span class="check-box">${s.done ? "✓" : ""}</span></button>
+      <span class="sub-title">${esc(s.title)}</span>
     </li>`;
   }
 
@@ -424,7 +460,7 @@
         </div>
         <h3 class="card-title">${esc(g.title)}</h3>
         ${steps ? `<div class="card-sub muted">${(g.steps.filter(s=>s.done).length)}/${steps} Schritte</div>
-          <div class="progress"><span style="width:${pct}%"></span></div>` : ""}
+          <div class="progress"><span style="width:${pct}%;background:${pctColor(pct)}"></span></div>` : ""}
       </div>
     </div>`;
   }
@@ -456,7 +492,7 @@
           <label class="field"><span>Zieljahr</span><select data-g="targetYear">${yearOpts}</select></label>
         </div>
         <div class="field"><span>Zwischenschritte <span class="muted">${Store.goalProgress(cur)}%</span></span>
-          <div class="progress lg"><span style="width:${Store.goalProgress(cur)}%"></span></div>
+          <div class="progress lg"><span style="width:${Store.goalProgress(cur)}%;background:${pctColor(Store.goalProgress(cur))}"></span></div>
           <ul class="subtasks" data-g-steps>${(cur.steps||[]).map(subRow).join("")}</ul>
           <div class="sub-add"><input type="text" data-g-step-new placeholder="Schritt hinzufügen…"><button class="icon-btn" data-g="add-step">＋</button></div>
         </div>
@@ -521,12 +557,19 @@
         await Store.updateGoal(gid, { steps: cg.steps.filter(s => s.id !== sid) }); refreshGoalSteps(gid);
       }
     };
+    // Zwischenschritte per Drag sortieren
+    makeSortable(stepsEl, ".sub-drag", "[data-sub]", "sub", async (ids) => {
+      const cg = Store.state.goals.find(x => x.id === gid); if (!cg) return;
+      cg.steps = ids.map(id => (cg.steps || []).find(s => s.id === id)).filter(Boolean);
+      await Store.updateGoal(gid, { steps: cg.steps });
+    });
   }
   function refreshGoalSteps(gid) {
     const g = Store.state.goals.find(x => x.id === gid); if (!g) return;
     panel.querySelector("[data-g-steps]").innerHTML = (g.steps || []).map(subRow).join("");
     const p = Store.goalProgress(g);
-    panel.querySelector(".progress.lg span").style.width = p + "%";
+    const bar = panel.querySelector(".progress.lg span");
+    bar.style.width = p + "%"; bar.style.background = pctColor(p);
   }
 
   /* ============================================================
@@ -937,7 +980,7 @@
         </label>
 
         <div class="field"><span>Unteraufgaben <span class="muted">${Store.progress(t)}%</span></span>
-          <div class="progress lg"><span style="width:${Store.progress(t)}%"></span></div>
+          <div class="progress lg"><span style="width:${Store.progress(t)}%;background:${pctColor(Store.progress(t))}"></span></div>
           <ul class="subtasks" data-subs>
             ${(t.subtasks||[]).map(s => subRow(s)).join("")}
           </ul>
@@ -961,6 +1004,7 @@
   }
   function subRow(s) {
     return `<li class="sub ${s.done ? "done" : ""}" data-sub="${s.id}">
+      <span class="sub-drag" title="Ziehen zum Sortieren">⠿</span>
       <button class="check sm" data-sub-toggle><span class="check-box">${s.done ? "✓" : ""}</span></button>
       <span class="sub-title">${esc(s.title)}</span>
       <button class="icon-btn sm" data-sub-del>✕</button></li>`;
@@ -1048,6 +1092,11 @@
         await Store.updateTask(t.id, { subtasks: t.subtasks }); refreshSubs(t); render();
       }
     };
+    // Unteraufgaben per Drag sortieren
+    makeSortable(subsEl, ".sub-drag", "[data-sub]", "sub", async (ids) => {
+      t.subtasks = ids.map(id => (t.subtasks || []).find(s => s.id === id)).filter(Boolean);
+      await Store.updateTask(t.id, { subtasks: t.subtasks }); render();
+    });
 
     // Anhänge
     const attInput = panel.querySelector("[data-att-input]");
@@ -1070,7 +1119,9 @@
   function refreshSubs(t) {
     const fresh = Store.state.tasks.find(x => x.id === t.id);
     panel.querySelector("[data-subs]").innerHTML = (fresh.subtasks || []).map(subRow).join("");
-    panel.querySelector(".progress.lg span").style.width = Store.progress(fresh) + "%";
+    const bar = panel.querySelector(".progress.lg span");
+    bar.style.width = Store.progress(fresh) + "%";
+    bar.style.background = pctColor(Store.progress(fresh));
   }
   async function refreshAtts(t) {
     const atts = await Store.getAttachments(t.id);
@@ -1296,6 +1347,16 @@
     content.addEventListener("click", async (e) => {
       const li = e.target.closest(".task"); if (!li) return;
       const id = li.dataset.id;
+      // Inline-Unteraufgabe abhaken (nicht das Panel öffnen)
+      const subrow = e.target.closest("[data-subrow]");
+      if (subrow) {
+        if (e.target.closest("[data-sub-check]")) {
+          const t = Store.state.tasks.find(t => t.id === id);
+          const s = (t && t.subtasks || []).find(s => s.id === subrow.dataset.subrow);
+          if (s) { await Store.toggleSubtask(id, s.id, !s.done); render(); }
+        }
+        return;
+      }
       if (e.target.closest('[data-act="toggle"]')) {
         const t = Store.state.tasks.find(t => t.id === id);
         await Store.toggleTask(id, !t.done); render();
