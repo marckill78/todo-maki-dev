@@ -40,6 +40,9 @@ const Sync = (() => {
 
   function init(changeCb) {
     onChange = changeCb || (() => {});
+    // Auf 127.0.0.1 (lokaler Dev-Server) ist die Domain nicht für OAuth freigegeben →
+    // Sync deaktivieren, sonst Endlos-Popup. „localhost" und die Live-Domain sind ok.
+    if (location.hostname === "127.0.0.1") { console.info("Sync auf 127.0.0.1 deaktiviert (Dev)"); return; }
     if (typeof firebase === "undefined") { console.warn("Firebase nicht geladen"); return; }
     try {
       firebase.initializeApp(firebaseConfig);
