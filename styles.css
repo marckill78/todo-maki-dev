@@ -246,6 +246,14 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--in
 }
 .task-panel.open { transform: translateX(0); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.panel-head-actions { display: flex; align-items: center; gap: 6px; }
+
+/* Routinen-Chips (Schnellerfassung) */
+.tpl-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.tpl-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.tpl-chip:hover { border-color: var(--accent); }
+.tpl-del { color: var(--ink-soft); font-size: 11px; padding: 0 2px; border-radius: 4px; }
+.tpl-del:hover { color: var(--danger); }
 .panel-body { flex: 1; overflow-y: auto; padding: 18px 20px 40px; display: flex; flex-direction: column; gap: 16px; }
 .panel-title-row { display: flex; gap: 12px; align-items: flex-start; }
 .panel-title {
@@ -326,6 +334,12 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--in
 .accent-custom { width: 26px; height: 26px; border-radius: 50%; border: 1px dashed var(--line); display: grid; place-items: center; font-size: 13px; cursor: pointer; position: relative; overflow: hidden; }
 .accent-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .modal-title { font-size: 19px; font-weight: 750; }
+.input-mic { display: flex; gap: 8px; align-items: center; }
+.input-mic .modal-input { flex: 1; }
+.mic-btn { width: 42px; height: 42px; flex-shrink: 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); font-size: 18px; cursor: pointer; }
+.mic-btn:hover { border-color: var(--accent); }
+.mic-btn.rec { background: var(--overdue); border-color: var(--overdue); animation: mic-pulse 1s infinite; }
+@keyframes mic-pulse { 50% { opacity: .55; } }
 .modal-input { font-size: 16px; }
 .modal-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
 .modal-actions > div { display: flex; gap: 8px; }
@@ -419,6 +433,17 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--in
   box-shadow: var(--shadow);
 }
 .dev-notes:focus { border-color: var(--accent); }
+
+/* ============ STATISTIK ============ */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 4px; }
+.stat-num { font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
+.stat-lbl { font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
+.stat-chart { display: flex; align-items: flex-end; gap: 8px; height: 140px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+.stat-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; }
+.stat-bar { width: 60%; max-width: 34px; min-height: 3px; background: var(--accent); border-radius: 6px 6px 0 0; transition: height .3s; }
+.stat-bar-n { font-size: 11px; font-weight: 700; color: var(--ink-soft); }
+.stat-bar-l { font-size: 11px; color: var(--ink-soft); }
 
 /* ============ STEUERLEISTE (Sortieren + Filter) ============ */
 .controls-bar { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }

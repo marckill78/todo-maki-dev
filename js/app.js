@@ -30,13 +30,14 @@
     return arr;
   }
   // Filter-Zustand (sitzungsweit, nicht persistiert)
-  let filters = { priority: 0, due: "all", area: "all" };
+  let filters = { priority: 0, due: "all", area: "all", tag: "all" };
   function applyFilters(list, opts = {}) {
     const today = Store.todayStr();
     const weekEnd = Store.addToDate(today, { type: "daily", interval: 7 });
     return list.filter(t => {
       if (filters.priority && (t.priority || 0) !== filters.priority) return false;
       if (opts.area !== false && filters.area !== "all" && t.areaId !== filters.area) return false;
+      if (filters.tag !== "all" && !(t.tags || []).includes(filters.tag)) return false;
       if (filters.due === "today"   && t.due !== today) return false;
       if (filters.due === "overdue" && !Store.isOverdue(t)) return false;
       if (filters.due === "none"    && t.due) return false;
@@ -44,7 +45,8 @@
       return true;
     });
   }
-  const filtersActive = () => filters.priority || filters.due !== "all" || filters.area !== "all";
+  const filtersActive = () => filters.priority || filters.due !== "all" || filters.area !== "all" || filters.tag !== "all";
+  const allTags = () => [...new Set(Store.state.tasks.flatMap(t => t.tags || []))].sort((a, b) => a.localeCompare(b, "de"));
 
   // Steuerleiste: Sortierung + Filter
   function controlsBar({ area = true } = {}) {
@@ -61,6 +63,9 @@
       <div class="ctrl"><span class="ctrl-label">Fälligkeit</span>
         ${sel("f-due", Object.entries(dueOpts).map(([k, v]) => `<option value="${k}" ${filters.due === k ? "selected" : ""}>${v}</option>`).join(""))}</div>
       ${area ? `<div class="ctrl"><span class="ctrl-label">Thema</span>${sel("f-area", areaOpts)}</div>` : ""}
+      ${allTags().length ? `<div class="ctrl"><span class="ctrl-label">Tag</span>${sel("f-tag",
+        `<option value="all" ${filters.tag === "all" ? "selected" : ""}>Alle Tags</option>` +
+        allTags().map(tg => `<option value="${esc(tg)}" ${filters.tag === tg ? "selected" : ""}>#${esc(tg)}</option>`).join(""))}</div>` : ""}
       ${filtersActive() ? `<button class="link-btn" id="f-reset">Filter zurücksetzen</button>` : ""}
     </div>`;
   }
@@ -195,6 +200,7 @@
           ${subCount ? `<button class="meta meta-toggle" data-subs-toggle><span class="chev">${expandedSubs.has(t.id) ? "▾" : "▸"}</span> ☑ ${t.subtasks.filter(s => s.done).length}/${subCount}</button>` : ""}
           ${area && view.name !== "area" ? `<span class="meta meta-area" style="--chip:${area.color}">${area.emoji} ${esc(area.name)}</span>` : ""}
         </div>
+        ${(t.tags && t.tags.length) ? `<div class="tag-row">${t.tags.map(tg => `<span class="tag-pill">#${esc(tg)}</span>`).join("")}</div>` : ""}
         ${subCount ? `<div class="progress"><span style="width:${pct}%;background:${pctColor(pct)}"></span></div>` : ""}
         ${subCount && expandedSubs.has(t.id) ? `<ul class="task-subs">${(t.subtasks || []).map(subRowList).join("")}</ul>` : ""}
       </div>
@@ -415,6 +421,73 @@
     return `<div class="empty"><div class="empty-emoji">🗒️</div><h3>${esc(title)}</h3><p>${esc(sub)}</p></div>`;
   }
 
+  /* ---------- Statistik ---------- */
+  function viewStats() {
+    content.innerHTML = renderHeaderTitle("📊 Statistik") + `<div id="stats-body" class="muted">Lade…</div>`;
+    Store.archivedTasks().then(async archived => {
+      const open = Store.state.tasks.filter(t => !t.done);
+      const doneActive = Store.state.tasks.filter(t => t.done);
+      // Erledigte (aktiv + archiviert) mit Zeitpunkt
+      const completed = [...doneActive, ...archived].filter(t => t.completedAt);
+
+      // Letzte 7 Tage
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        const ds = Store.toDateStr(d);
+        const count = completed.filter(t => Store.toDateStr(new Date(t.completedAt)) === ds).length;
+        days.push({ ds, count, label: d.toLocaleDateString("de-DE", { weekday: "short" }) });
+      }
+      const maxC = Math.max(1, ...days.map(d => d.count));
+      const weekTotal = days.reduce((s, d) => s + d.count, 0);
+
+      // Streak (zusammenhängende Tage mit ≥1 Erledigung, rückwärts ab heute)
+      let streak = 0;
+      for (let i = 0; ; i++) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        const ds = Store.toDateStr(d);
+        const has = completed.some(t => Store.toDateStr(new Date(t.completedAt)) === ds);
+        if (has) streak++;
+        else if (i === 0) continue; // heute noch nichts erledigt → Streak nicht sofort 0
+        else break;
+        if (i > 365) break;
+      }
+
+      // Budget aktueller Monat
+      const ym = Store.todayStr().slice(0, 7);
+      const exp = await Store.expensesForMonth(ym);
+      const monthSpent = exp.reduce((s, e) => s + e.amount, 0);
+
+      // Offen pro Bereich
+      const perArea = Store.state.areas.map(a => ({ a, n: open.filter(t => t.areaId === a.id).length }))
+        .filter(x => x.n).sort((x, y) => y.n - x.n);
+
+      const bars = days.map(d => `<div class="stat-bar-col">
+          <div class="stat-bar" style="height:${Math.round(d.count / maxC * 100)}%" title="${d.count}"></div>
+          <span class="stat-bar-n">${d.count || ""}</span>
+          <span class="stat-bar-l">${d.label}</span>
+        </div>`).join("");
+
+      $("#stats-body").outerHTML = `<div id="stats-body">
+        <div class="stat-cards">
+          <div class="stat-card"><span class="stat-num">${open.length}</span><span class="stat-lbl">offen</span></div>
+          <div class="stat-card"><span class="stat-num">${weekTotal}</span><span class="stat-lbl">erledigt (7 Tage)</span></div>
+          <div class="stat-card"><span class="stat-num">🔥 ${streak}</span><span class="stat-lbl">Tage-Streak</span></div>
+          <div class="stat-card"><span class="stat-num">${fmtEur(monthSpent)}</span><span class="stat-lbl">Budget Monat</span></div>
+        </div>
+        <div class="list-block"><h3 class="block-title">Erledigt – letzte 7 Tage</h3>
+          <div class="stat-chart">${bars}</div></div>
+        ${perArea.length ? `<div class="list-block"><h3 class="block-title">Offen pro Bereich</h3>
+          ${perArea.map(({ a, n }) => `<div class="legend-row">
+            <span class="legend-dot" style="background:${a.color}"></span>
+            <span class="legend-name">${a.emoji} ${esc(a.name)}</span>
+            <span class="legend-bar"><span style="width:${Math.round(n / open.length * 100)}%;background:${a.color}"></span></span>
+            <span class="legend-val">${n}</span></div>`).join("")}
+        </div>` : ""}
+      </div>`;
+    });
+  }
+
   /* ---------- Anmerkungen (temporär, Entwicklung) ---------- */
   let notesTimer;
   function viewNotes() {
@@ -462,7 +535,9 @@
     const pct = Store.goalProgress(g);
     const steps = (g.steps || []).length;
     return `<div class="goal-card ${g.achieved ? "achieved" : ""}" data-id="${g.id}">
-      ${g.mediaId ? `<div class="card-img"><img data-media="${g.mediaId}" alt=""></div>` : `<div class="card-img placeholder">🎯</div>`}
+      ${g.mediaId ? `<div class="card-img"><img data-media="${g.mediaId}" alt=""></div>`
+        : g.imageUrl ? `<div class="card-img"><img src="${esc(g.imageUrl)}" alt="" loading="lazy"></div>`
+        : `<div class="card-img placeholder">🎯</div>`}
       <div class="card-body">
         <div class="card-top">
           ${g.category ? `<span class="chip-tag">${esc(g.category)}</span>` : ""}
@@ -494,9 +569,15 @@
       <div class="panel-body">
         <input class="panel-title-input" data-g="title" placeholder="Was möchtest du erreichen?" value="${esc(cur.title)}">
         <div class="goal-img-edit">
-          ${cur.mediaId ? `<img data-media="${cur.mediaId}" alt="">` : `<div class="goal-img-ph">🎯</div>`}
-          <label class="btn-soft sm">📷 Bild${cur.mediaId ? " ändern" : ""}<input type="file" accept="image/*" data-g="img" hidden></label>
-          ${cur.mediaId ? `<button class="link-btn danger sm" data-g="img-del">Bild entfernen</button>` : ""}
+          ${cur.mediaId ? `<img data-media="${cur.mediaId}" alt="">`
+            : cur.imageUrl ? `<img src="${esc(cur.imageUrl)}" alt="">`
+            : `<div class="goal-img-ph">🎯</div>`}
+          <div class="img-actions">
+            <label class="btn-soft sm">📷 Hochladen<input type="file" accept="image/*" data-g="img" hidden></label>
+            <button class="btn-soft sm" data-g="img-search">🔍 Bilder suchen</button>
+            ${(cur.mediaId || cur.imageUrl) ? `<button class="link-btn danger sm" data-g="img-del">entfernen</button>` : ""}
+          </div>
+          <input type="url" class="img-url" data-g="imageUrl" placeholder="…oder Bild-URL einfügen" value="${esc(cur.imageUrl || "")}">
         </div>
         <div class="field-row">
           <label class="field"><span>Kategorie</span><select data-g="category">${catOpts}</select></label>
@@ -532,16 +613,30 @@
       if (f.size > 6 * 1024 * 1024) { toast("Bild zu groß (max. 6 MB)"); return; }
       await ensure();
       const cg = Store.state.goals.find(x => x.id === gid);
+      if (window.Sync && Sync.canUpload()) {
+        toast("Bild wird hochgeladen…");
+        try {
+          const url = await Sync.uploadImage(f);
+          if (url) { if (cg.mediaId) await Store.delMedia(cg.mediaId); await Store.updateGoal(gid, { imageUrl: url, mediaId: null }); openGoalPanel(gid); return; }
+        } catch (err) { console.warn(err); toast("Upload fehlgeschlagen – lokal gespeichert"); }
+      }
       if (cg.mediaId) await Store.delMedia(cg.mediaId);
       const mediaId = await Store.addMedia(f);
-      await Store.updateGoal(gid, { mediaId });
+      await Store.updateGoal(gid, { mediaId, imageUrl: "" });
       openGoalPanel(gid);
+    };
+    panel.querySelector('[data-g="imageUrl"]').onchange = async (e) => {
+      await save({ imageUrl: e.target.value.trim() }); openGoalPanel(gid);
+    };
+    panel.querySelector('[data-g="img-search"]').onclick = () => {
+      const q = panel.querySelector('[data-g="title"]').value.trim() || "Ziel";
+      window.open("https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(q), "_blank", "noopener");
     };
     const imgDel = panel.querySelector('[data-g="img-del"]');
     if (imgDel) imgDel.onclick = async () => {
       const cg = Store.state.goals.find(x => x.id === gid);
-      if (cg.mediaId) await Store.delMedia(cg.mediaId);
-      await Store.updateGoal(gid, { mediaId: null }); openGoalPanel(gid);
+      if (cg && cg.mediaId) await Store.delMedia(cg.mediaId);
+      await save({ mediaId: null, imageUrl: "" }); openGoalPanel(gid);
     };
     // Schritte
     const stepsEl = panel.querySelector("[data-g-steps]");
@@ -592,7 +687,40 @@
     aktivitaet: { label: "Aktivität", icon: "🎟️" }
   };
   let placesFilter = { type: "all", status: "all" };
-  let placesSort = "recent"; // recent | rating | name
+  let placesSort = "recent"; // recent | rating | name | near
+  let userPos = null;        // {lat,lng} für „In der Nähe"
+
+  function haversineKm(a, b) {
+    const R = 6371, toR = x => x * Math.PI / 180;
+    const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  }
+  const placeDist = (p) => (userPos && p.lat != null && p.lng != null) ? haversineKm(userPos, { lat: p.lat, lng: p.lng }) : Infinity;
+
+  // Adresse → Koordinaten (OpenStreetMap Nominatim, kostenlos, kein Key)
+  async function geocodePlace(p) {
+    const q = (p.address || p.name || "").trim(); if (!q) return;
+    try {
+      const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(q), { headers: { "Accept": "application/json" } });
+      const j = await r.json();
+      if (j && j[0]) await Store.updatePlace(p.id, { lat: +j[0].lat, lng: +j[0].lon });
+    } catch (e) { console.warn("geocode", e); }
+  }
+  function enableNearSort() {
+    if (!navigator.geolocation) { toast("Standort nicht verfügbar"); placesSort = "recent"; render(); return; }
+    toast("Standort wird ermittelt…");
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      for (const p of Store.state.places) {
+        if ((p.lat == null || p.lng == null) && (p.address || p.name)) {
+          await geocodePlace(p);
+          await new Promise(r => setTimeout(r, 1100)); // Nominatim: max 1 Anfrage/Sek
+        }
+      }
+      render();
+    }, () => { toast("Standort verweigert"); placesSort = "recent"; render(); });
+  }
 
   function viewPlaces() {
     let list = [...Store.state.places];
@@ -600,10 +728,11 @@
     if (placesFilter.status !== "all") list = list.filter(p => p.status === placesFilter.status);
     if (placesSort === "rating") list.sort((a, b) => (b.rating || 0) - (a.rating || 0) || (b.createdAt||0) - (a.createdAt||0));
     else if (placesSort === "name") list.sort((a, b) => a.name.localeCompare(b.name, "de"));
+    else if (placesSort === "near") list.sort((a, b) => placeDist(a) - placeDist(b));
     else list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     const tab = (val, label) => `<button class="seg ${placesFilter.type === val ? "sel" : ""}" data-ptype="${val}">${label}</button>`;
-    const sortOpts = { recent: "Zuletzt", rating: "Bewertung", name: "Name" };
+    const sortOpts = { recent: "Zuletzt", rating: "Bewertung", name: "Name", near: "📍 In der Nähe" };
     let html = `<div class="view-head">
         <h2>📍 Orte</h2>
         <button class="btn-primary" id="add-place">＋ Neuer Ort</button>
@@ -626,7 +755,10 @@
     content.innerHTML = html;
     $("#add-place").onclick = () => openPlacePanel(null);
     $("#place-status").onchange = (e) => { placesFilter.status = e.target.value; render(); };
-    $("#place-sort").onchange = (e) => { placesSort = e.target.value; render(); };
+    $("#place-sort").onchange = (e) => {
+      placesSort = e.target.value;
+      if (placesSort === "near") enableNearSort(); else render();
+    };
     $$("[data-ptype]").forEach(b => b.onclick = () => { placesFilter.type = b.dataset.ptype; render(); });
     $$("#content .place-card").forEach(c => c.onclick = (e) => {
       if (e.target.closest("[data-pact]")) return; // Aktions-Links nicht als Öffnen werten
@@ -651,6 +783,7 @@
         <div class="card-sub">
           ${p.rating ? `<span class="rating">${stars(p.rating)}</span>` : ""}
           ${p.price ? `<span class="price">${priceStr(p.price)}</span>` : ""}
+          ${(placesSort === "near" && userPos && p.lat != null) ? `<span class="meta">📍 ${placeDist(p) < 1 ? Math.round(placeDist(p) * 1000) + " m" : placeDist(p).toFixed(1) + " km"}</span>` : ""}
         </div>
         ${(p.tags && p.tags.length) ? `<div class="tag-row">${p.tags.map(t => `<span class="tag-pill">${esc(t)}</span>`).join("")}</div>` : ""}
         <div class="place-actions">
@@ -748,9 +881,17 @@
       if (f.size > 6 * 1024 * 1024) { toast("Bild zu groß (max. 6 MB)"); return; }
       await ensure();
       const cp = Store.state.places.find(x => x.id === pid);
+      // Eingeloggt → in die Cloud (synct); sonst lokal als Blob
+      if (window.Sync && Sync.canUpload()) {
+        toast("Bild wird hochgeladen…");
+        try {
+          const url = await Sync.uploadImage(f);
+          if (url) { if (cp.mediaId) await Store.delMedia(cp.mediaId); await save({ imageUrl: url, mediaId: null }); openPlacePanel(pid); return; }
+        } catch (err) { console.warn(err); toast("Upload fehlgeschlagen – lokal gespeichert"); }
+      }
       if (cp.mediaId) await Store.delMedia(cp.mediaId);
       const mediaId = await Store.addMedia(f);
-      await Store.updatePlace(pid, { mediaId });
+      await save({ mediaId, imageUrl: "" });
       openPlacePanel(pid);
     };
     const imgDel = panel.querySelector('[data-pl="img-del"]');
@@ -941,12 +1082,25 @@
     if (q) return renderSearch(q);
     ({ myday: viewMyDay, all: viewAll, area: viewArea,
        calendar: viewCalendar, archive: viewArchive, notes: viewNotes,
-       goals: viewGoals, places: viewPlaces, budget: viewBudget }[view.name] || viewMyDay)();
+       goals: viewGoals, places: viewPlaces, budget: viewBudget, stats: viewStats }[view.name] || viewMyDay)();
   }
   function renderSearch(q) {
+    const ql = q.toLowerCase();
+    const hit = (...vals) => vals.some(v => (v || "").toString().toLowerCase().includes(ql));
     const tasks = Store.search(q);
-    content.innerHTML = renderHeaderTitle(`🔍 Suche: „${q}“`, `${tasks.length} Treffer`) +
-      (tasks.length ? `<ul class="task-list">${tasks.map(taskRow).join("")}</ul>` : emptyState("Nichts gefunden", "Andere Suchbegriffe versuchen."));
+    const goals = Store.state.goals.filter(g => hit(g.title, g.notes, g.category, ...(g.steps || []).map(s => s.title)));
+    const places = Store.state.places.filter(p => hit(p.name, p.notes, p.address, ...(p.tags || [])));
+    const total = tasks.length + goals.length + places.length;
+
+    let html = renderHeaderTitle(`🔍 Suche: „${q}“`, `${total} Treffer`);
+    if (!total) html += emptyState("Nichts gefunden", "Andere Suchbegriffe versuchen.");
+    if (tasks.length) html += `<div class="list-block"><h3 class="block-title">📋 Aufgaben <span class="block-n">${tasks.length}</span></h3><ul class="task-list">${tasks.map(taskRow).join("")}</ul></div>`;
+    if (goals.length) html += `<div class="list-block"><h3 class="block-title">🎯 Ziele <span class="block-n">${goals.length}</span></h3><div class="card-grid">${goals.map(goalCard).join("")}</div></div>`;
+    if (places.length) html += `<div class="list-block"><h3 class="block-title">📍 Orte <span class="block-n">${places.length}</span></h3><div class="card-grid">${places.map(placeCard).join("")}</div></div>`;
+    content.innerHTML = html;
+    $$("#content .goal-card").forEach(c => c.onclick = () => openGoalPanel(c.dataset.id));
+    $$("#content .place-card").forEach(c => c.onclick = (e) => { if (!e.target.closest("[data-pact]")) openPlacePanel(c.dataset.id); });
+    loadMediaImages();
   }
 
   /* ============ TASK-DETAIL-PANEL ============ */
@@ -975,7 +1129,10 @@
     return `
       <header class="panel-head">
         <button class="icon-btn" data-p="close">✕</button>
-        <button class="link-btn danger" data-p="delete">Löschen</button>
+        <div class="panel-head-actions">
+          <button class="link-btn" data-p="template">★ Als Routine</button>
+          <button class="link-btn danger" data-p="delete">Löschen</button>
+        </div>
       </header>
       <div class="panel-body">
         <div class="panel-title-row">
@@ -1024,6 +1181,9 @@
         <label class="field"><span>Notizen</span>
           <textarea data-f="notes" rows="3" placeholder="Notizen…">${esc(t.notes)}</textarea></label>
 
+        <label class="field"><span>Tags (Komma-getrennt)</span>
+          <input type="text" data-f="tags" placeholder="z.B. dringend, warten auf…" value="${esc((t.tags || []).join(", "))}"></label>
+
         <div class="field"><span>Anhänge (Bild / PDF)</span>
           <ul class="atts" data-atts>${atts.map(attRow).join("")}</ul>
           <label class="att-add">
@@ -1051,6 +1211,10 @@
     const save = (patch) => Store.updateTask(t.id, patch).then(() => { render(); });
 
     panel.querySelector('[data-p="close"]').onclick = closePanel;
+    panel.querySelector('[data-p="template"]').onclick = () => {
+      const fresh = Store.state.tasks.find(x => x.id === t.id) || t;
+      addTemplateFromTask(fresh); toast("Als Routine gespeichert");
+    };
     panel.querySelector('[data-p="delete"]').onclick = async () => {
       if (!confirm("Diese Aufgabe wirklich löschen?")) return;
       await Store.deleteTask(t.id); closePanel(); render(); toast("Aufgabe gelöscht");
@@ -1082,6 +1246,7 @@
       save({ repeat: { type: repSel.value, interval } });
     };
     panel.querySelector('[data-f="myDay"]').onchange = (e) => save({ myDay: e.target.checked });
+    panel.querySelector('[data-f="tags"]').onchange = (e) => save({ tags: e.target.value.split(",").map(x => x.trim()).filter(Boolean) });
 
     // Emoji/Farb-Picker
     const picker = panel.querySelector("[data-picker]");
@@ -1160,13 +1325,41 @@
   }
   function autoGrow(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
 
+  // Diktieren per Web Speech API (Chrome/Edge/Safari-iOS); Button nur wenn unterstützt
+  function setupMic(btn, input) {
+    if (!btn) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;                 // nicht unterstützt → Button bleibt versteckt
+    btn.hidden = false;
+    let rec = null, listening = false;
+    btn.onclick = () => {
+      if (listening && rec) { rec.stop(); return; }
+      rec = new SR(); rec.lang = "de-DE"; rec.interimResults = false; rec.maxAlternatives = 1;
+      rec.onstart = () => { listening = true; btn.classList.add("rec"); };
+      rec.onerror = () => { listening = false; btn.classList.remove("rec"); };
+      rec.onend = () => { listening = false; btn.classList.remove("rec"); };
+      rec.onresult = (e) => {
+        const text = e.results[0][0].transcript.trim();
+        input.value = input.value ? input.value + " " + text : text;
+        input.focus();
+      };
+      rec.start();
+    };
+  }
+
   /* ============ QUICK ADD ============ */
   function openQuickAdd() {
     const areaOpts = Store.state.areas.map(a =>
       `<option value="${a.id}" ${view.name === "area" && a.id === view.areaId ? "selected" : ""}>${esc(a.emoji + " " + a.name)}</option>`).join("");
     modal.innerHTML = `
       <h3 class="modal-title">Neue Aufgabe</h3>
-      <input type="text" id="qa-title" placeholder="Was ist zu tun?" class="modal-input" autofocus>
+      <div class="input-mic">
+        <input type="text" id="qa-title" placeholder="Was ist zu tun?" class="modal-input" autofocus>
+        <button class="mic-btn" id="qa-mic" title="Diktieren" hidden>🎤</button>
+      </div>
+      ${getTemplates().length ? `<div class="field"><span>Routinen</span>
+        <div class="tpl-chips">${getTemplates().map(tp => `<button class="tpl-chip" data-tpl="${tp.id}">${esc(tp.emoji)} ${esc(tp.title)}<span class="tpl-del" data-tpl-del="${tp.id}" title="Vorlage löschen">✕</span></button>`).join("")}</div>
+      </div>` : ""}
       <div class="field-row">
         <label class="field"><span>Bereich</span><select id="qa-area">${areaOpts}</select></label>
         <label class="field"><span>Fällig</span><input type="date" id="qa-due"></label>
@@ -1192,6 +1385,16 @@
     modal.querySelector('[data-m="save"]').onclick = save;
     modal.querySelector('[data-m="cancel"]').onclick = hideModal;
     titleEl.onkeydown = (e) => { if (e.key === "Enter") save(); };
+    setupMic($("#qa-mic"), titleEl);
+    // Routinen-Chips: Klick = Aufgabe aus Vorlage anlegen; ✕ = Vorlage löschen
+    modal.querySelectorAll("[data-tpl]").forEach(chip => chip.onclick = async (e) => {
+      if (e.target.closest("[data-tpl-del]")) {
+        deleteTemplate(e.target.closest("[data-tpl-del]").dataset.tplDel); openQuickAdd(); return;
+      }
+      const tpl = getTemplates().find(t => t.id === chip.dataset.tpl); if (!tpl) return;
+      await createTaskFromTemplate(tpl, $("#qa-myday").checked);
+      hideModal(); render(); toast("Aus Routine angelegt");
+    });
   }
 
   /* ============ BEREICH-MODAL ============ */
@@ -1425,6 +1628,27 @@
   function applyAccent(c = accentPref()) { document.documentElement.style.setProperty("--accent", c); }
   function setAccent(c) { localStorage.setItem("maki-accent", c); applyAccent(c); }
 
+  /* Routinen/Vorlagen (lokal gespeichert) */
+  const getTemplates = () => { try { return JSON.parse(localStorage.getItem("maki-templates") || "[]"); } catch { return []; } };
+  const saveTemplates = (list) => localStorage.setItem("maki-templates", JSON.stringify(list));
+  function addTemplateFromTask(t) {
+    const list = getTemplates();
+    list.push({
+      id: Store.uid(), title: t.title, areaId: t.areaId, priority: t.priority || 0,
+      emoji: t.emoji || "📝", color: t.color || MAKI_COLORS[0],
+      subtasks: (t.subtasks || []).map(s => s.title)
+    });
+    saveTemplates(list);
+  }
+  function deleteTemplate(id) { saveTemplates(getTemplates().filter(t => t.id !== id)); }
+  async function createTaskFromTemplate(tpl, myDay) {
+    return Store.addTask({
+      title: tpl.title, areaId: tpl.areaId, priority: tpl.priority,
+      emoji: tpl.emoji, color: tpl.color, myDay,
+      subtasks: (tpl.subtasks || []).map(title => ({ id: Store.uid(), title, done: false }))
+    });
+  }
+
   const weekStart = () => +(localStorage.getItem("maki-week-start") ?? "1"); // 1=Mo, 0=So
   const hideDone = () => localStorage.getItem("maki-hide-done") === "1";
   const reminderTime = () => localStorage.getItem("maki-reminder-time") || "";
@@ -1527,9 +1751,10 @@
       } else if (e.target.id === "f-prio") { filters.priority = +e.target.value; render(); }
       else if (e.target.id === "f-due")  { filters.due = e.target.value; render(); }
       else if (e.target.id === "f-area") { filters.area = e.target.value; render(); }
+      else if (e.target.id === "f-tag")  { filters.tag = e.target.value; render(); }
     });
     content.addEventListener("click", (e) => {
-      if (e.target.id === "f-reset") { filters = { priority: 0, due: "all", area: "all" }; render(); }
+      if (e.target.id === "f-reset") { filters = { priority: 0, due: "all", area: "all", tag: "all" }; render(); }
     });
 
     // Drag & Drop per Pointer-Events (Maus + Touch) — am Griff ⠿

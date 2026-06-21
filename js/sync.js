@@ -17,7 +17,7 @@ const Sync = (() => {
   // Diese Stores werden synchronisiert (Bilder/Anhänge bleiben lokal pro Gerät)
   const COLLECTIONS = ["areas", "tasks", "goals", "places", "expenses"];
 
-  let auth = null, db = null;
+  let auth = null, db = null, storage = null;
   let user = null;
   let status = "off";           // off | syncing | on | error
   let applyingRemote = false;   // verhindert Echo-Schleifen
@@ -51,6 +51,7 @@ const Sync = (() => {
       firebase.initializeApp(firebaseConfig);
       auth = firebase.auth();
       db = firebase.firestore();
+      try { if (firebase.storage) storage = firebase.storage(); } catch {}
       db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); // Offline-Cache
       auth.onAuthStateChanged(async (u) => {
         user = u;
@@ -104,6 +105,17 @@ const Sync = (() => {
     console.warn("Sync-Schreibfehler", e);
     setStatus("error", (e && e.message) || String(e));
   }
+
+  // Bild in Firebase Storage hochladen → liefert öffentliche Download-URL (synct als String).
+  // Nur wenn eingeloggt & Storage verfügbar; sonst null (Aufrufer nutzt dann lokalen Blob).
+  const canUpload = () => !!(storage && isOn());
+  async function uploadImage(file) {
+    if (!canUpload()) return null;
+    const ref = storage.ref().child(`users/${user.uid}/media/${uid()}_${(file.name || "bild").replace(/[^\w.\-]/g, "_")}`);
+    const snap = await ref.put(file);
+    return await snap.ref.getDownloadURL();
+  }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   // Firestore mag kein undefined
   function sanitize(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -176,7 +188,7 @@ const Sync = (() => {
   function stopListeners() { unsubs.forEach(u => { try { u(); } catch {} }); unsubs = []; }
 
   return {
-    init, login, logout, pushDoc, pushDelete, isOn, isReady,
+    init, login, logout, pushDoc, pushDelete, isOn, isReady, uploadImage, canUpload,
     get user() { return user; },
     get status() { return status; },
     get authResolved() { return authResolved; },

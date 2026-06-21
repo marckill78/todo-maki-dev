@@ -167,6 +167,7 @@ const Store = (() => {
     return state.tasks.filter(t =>
       t.title.toLowerCase().includes(q) ||
       (t.notes || "").toLowerCase().includes(q) ||
+      (t.tags || []).some(tg => tg.toLowerCase().includes(q)) ||
       (t.subtasks || []).some(s => s.title.toLowerCase().includes(q))
     ).sort(sortTasks);
   }
@@ -222,6 +223,7 @@ const Store = (() => {
       myDay: !!data.myDay,
       myDayDate: data.myDay ? todayStr() : null,
       repeat: data.repeat || null,          // {type, interval}
+      tags: data.tags || [],
       subtasks: data.subtasks || [],
       done: false,
       completedAt: null,
@@ -397,7 +399,7 @@ const Store = (() => {
     const goal = {
       id: uid(), title: (data.title || "").trim() || "Neues Ziel",
       notes: data.notes || "", category: data.category || "",
-      targetYear: data.targetYear || null, mediaId: data.mediaId || null,
+      targetYear: data.targetYear || null, mediaId: data.mediaId || null, imageUrl: data.imageUrl || "",
       steps: data.steps || [], achieved: false, achievedAt: null,
       order: state.goals.length, createdAt: Date.now()
     };
@@ -432,6 +434,7 @@ const Store = (() => {
       rating: data.rating || 0, price: data.price || 0,
       status: data.status || "want", visitedAt: data.visitedAt || null,
       mediaId: data.mediaId || null, imageUrl: data.imageUrl || "", tags: data.tags || [],
+      lat: data.lat ?? null, lng: data.lng ?? null,
       order: state.places.length, createdAt: Date.now()
     };
     await DB.put("places", place); state.places.push(place); return place;
