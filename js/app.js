@@ -13,6 +13,7 @@
   const modal     = $("#modal");
   const modalOv   = $("#modal-overlay");
 
+  const APP_VERSION = "v24";   // sichtbar in den Einstellungen — bei jedem Deploy mitziehen
   let view = { name: "myday", areaId: null };
   let sortMode = localStorage.getItem("maki-sort") || "manual"; // manual | priority | due
 
@@ -1609,7 +1610,7 @@
         <p class="muted small">Aktuell: ${counts.areas} Bereiche · ${counts.tasks} aktive Aufgaben</p>
         <button class="link-btn danger" data-s="reset" style="align-self:flex-start">Alle Daten zurücksetzen…</button>
       </div>
-      <div class="modal-actions"><span></span>
+      <div class="modal-actions"><span class="muted small">Version ${APP_VERSION}</span>
         <button class="btn-soft" data-m="cancel">Schließen</button>
       </div>`;
     showModal();
