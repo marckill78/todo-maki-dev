@@ -13,7 +13,7 @@
   const modal     = $("#modal");
   const modalOv   = $("#modal-overlay");
 
-  const APP_VERSION = "v28";   // sichtbar in den Einstellungen — bei jedem Deploy mitziehen
+  const APP_VERSION = "v29";   // sichtbar in den Einstellungen — bei jedem Deploy mitziehen
   let view = { name: "myday", areaId: null };
   let sortMode = localStorage.getItem("maki-sort") || "manual"; // manual | priority | due
 
@@ -381,9 +381,9 @@
             <button data-mode="week" class="${calMode==="week"?"sel":""}">Woche</button>
             <button data-mode="day" class="${calMode==="day"?"sel":""}">Tag</button>
           </div>
-          <button class="icon-btn" data-cal="prev">‹</button>
+          <button class="icon-btn" data-cal="prev" title="Zurück" aria-label="Vorheriger Zeitraum">‹</button>
           <button class="link-btn" data-cal="today">Heute</button>
-          <button class="icon-btn" data-cal="next">›</button>
+          <button class="icon-btn" data-cal="next" title="Weiter" aria-label="Nächster Zeitraum">›</button>
         </div>
       </div>
       <div id="cal-area"></div>
@@ -545,25 +545,6 @@
         </div>` : ""}
       </div>`;
     });
-  }
-
-  /* ---------- Anmerkungen (temporär, Entwicklung) ---------- */
-  let notesTimer;
-  function viewNotes() {
-    content.innerHTML = renderHeaderTitle("📝 Anmerkungen", "Temporäres Feld für Feedback während der Entwicklung. Wird zum Schluss entfernt.") +
-      `<textarea id="dev-notes" class="dev-notes" placeholder="Hier Wünsche, Bugs und Ideen notieren…"></textarea>
-       <p class="muted small" id="dev-notes-status">Wird automatisch gespeichert.</p>`;
-    const ta = $("#dev-notes");
-    DB.metaGet("dev-notes").then(v => { ta.value = v || ""; });
-    ta.oninput = () => {
-      clearTimeout(notesTimer);
-      const s1 = $("#dev-notes-status"); if (s1) s1.textContent = "Speichere…";
-      notesTimer = setTimeout(async () => {
-        await DB.metaSet("dev-notes", ta.value);
-        const s2 = $("#dev-notes-status");   // Ansicht könnte gewechselt sein
-        if (s2) s2.textContent = "Gespeichert ✓ " + new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-      }, 500);
-    };
   }
 
   /* ============================================================
@@ -1207,9 +1188,9 @@
     content.innerHTML = `<div class="view-head cal-head">
         <h2>💶 Budget</h2>
         <div class="cal-nav">
-          <button class="icon-btn" data-bm="prev">‹</button>
+          <button class="icon-btn" data-bm="prev" title="Vormonat" aria-label="Vorheriger Monat">‹</button>
           <button class="link-btn" data-bm="today">Heute</button>
-          <button class="icon-btn" data-bm="next">›</button>
+          <button class="icon-btn" data-bm="next" title="Folgemonat" aria-label="Nächster Monat">›</button>
           <button class="btn-soft" id="edit-recurring">🔁 Abos</button>
           <button class="btn-soft" id="edit-cats">⚙ Kategorien</button>
           <button class="btn-primary" id="add-expense">＋ Ausgabe</button>
@@ -1464,7 +1445,7 @@
     const q = $("#search").value.trim();
     if (q) return renderSearch(q);
     ({ myday: viewMyDay, all: viewAll, area: viewArea,
-       calendar: viewCalendar, archive: viewArchive, notes: viewNotes,
+       calendar: viewCalendar, archive: viewArchive,
        goals: viewGoals, places: viewPlaces, budget: viewBudget, stats: viewStats,
        purchases: viewPurchases, trash: viewTrash }[view.name] || viewMyDay)();
   }
@@ -1473,7 +1454,7 @@
     const b = $("#quick-add-btn"); if (!b) return;
     const labels = { places: "＋ Neuer Ort", goals: "＋ Neues Ziel", purchases: "＋ Anschaffung" };
     b.textContent = labels[view.name] || "＋ Neue Aufgabe";
-    b.style.display = ["stats", "archive", "notes", "calendar", "budget"].includes(view.name) ? "none" : "";
+    b.style.display = ["stats", "archive", "calendar", "budget"].includes(view.name) ? "none" : "";
   }
   function quickAddDispatch() {
     if (view.name === "places") return openPlacePanel(null);
@@ -2111,8 +2092,12 @@
     const dark = pref === "dark" ||
       (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", dark ? "#1d2027" : "#6c5ce7");
+    syncThemeColor(dark);
+  }
+  // Statusleisten-Farbe (PWA) an Theme + gewählte Akzentfarbe angleichen
+  function syncThemeColor(dark) {
+    const meta = document.querySelector('meta[name="theme-color"]:not([media])');
+    if (meta) meta.setAttribute("content", dark ? "#1d2027" : accentPref());
   }
   function setThemePref(pref) { localStorage.setItem("maki-theme", pref); applyTheme(pref); }
   // Bei „System" auf OS-Wechsel reagieren
@@ -2123,7 +2108,11 @@
   /* ============ WEITERE PRÄFERENZEN ============ */
   const ACCENT_PRESETS = ["#6c5ce7", "#0984e3", "#00b894", "#e17055", "#d63031", "#e84393", "#00cec9", "#fdcb6e"];
   const accentPref = () => localStorage.getItem("maki-accent") || "#6c5ce7";
-  function applyAccent(c = accentPref()) { document.documentElement.style.setProperty("--accent", c); }
+  function applyAccent(c = accentPref()) {
+    document.documentElement.style.setProperty("--accent", c);
+    // Statusleiste mitziehen, wenn gerade helles Theme aktiv ist
+    if (document.documentElement.getAttribute("data-theme") !== "dark") syncThemeColor(false);
+  }
   function setAccent(c) { localStorage.setItem("maki-accent", c); applyAccent(c); }
 
   /* Routinen/Vorlagen (lokal gespeichert) */

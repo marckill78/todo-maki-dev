@@ -431,16 +431,6 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--in
 .cw-task.done { text-decoration: line-through; opacity: .55; }
 .cw-task.od { border-left-color: var(--overdue); color: var(--overdue); }
 
-/* ============ ANMERKUNGEN (temporär) ============ */
-.dev-notes {
-  width: 100%; min-height: 320px; resize: vertical;
-  border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 16px; background: var(--surface); color: var(--ink);
-  font-family: var(--font); font-size: 15px; line-height: 1.6; outline: none;
-  box-shadow: var(--shadow);
-}
-.dev-notes:focus { border-color: var(--accent); }
-
 /* ============ STATISTIK ============ */
 .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 24px; }
 .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 4px; }
@@ -643,17 +633,20 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--in
   .topbar { padding: 10px 13px; gap: 8px; }
   .btn-primary { padding: 9px 12px; font-size: 13.5px; }
   .view-head { margin-bottom: 14px; gap: 8px; }
-  .view-head h2 { font-size: 20px; }
+  .view-head h2 { font-size: 20px; line-height: 1.25; }
+  /* Aktionsleisten (Budget/Kalender) umbrechen, damit nichts abgeschnitten wird */
+  .cal-head .cal-nav { flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; }
+  .cal-head .cal-nav .btn-primary { margin-left: auto; }
 
   /* Aufgaben kompakter */
   .task { padding: 10px 11px; gap: 9px; border-radius: 12px; }
   .task-chip { width: 27px; height: 27px; font-size: 14px; }
   .progress { height: 8px; }
 
-  /* Steuerleiste: scrollbar statt umbrechen, damit es kompakt bleibt */
-  .controls-bar { gap: 8px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
-  .controls-bar .ctrl { flex-shrink: 0; }
-  .controls-bar select { padding: 6px 8px; font-size: 13px; }
+  /* Steuerleiste: umbrechen, damit alle Filter (auch „Thema") sichtbar bleiben */
+  .controls-bar { gap: 8px 10px; flex-wrap: wrap; }
+  .controls-bar .ctrl { flex: 1 1 auto; min-width: 0; }
+  .controls-bar select { width: 100%; padding: 6px 8px; font-size: 13px; }
 
   /* Karten: zwei schmale Spalten */
   .card-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 11px; }
