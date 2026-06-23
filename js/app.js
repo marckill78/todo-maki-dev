@@ -13,7 +13,7 @@
   const modal     = $("#modal");
   const modalOv   = $("#modal-overlay");
 
-  const APP_VERSION = "v29";   // sichtbar in den Einstellungen — bei jedem Deploy mitziehen
+  const APP_VERSION = "v30";   // sichtbar in den Einstellungen — bei jedem Deploy mitziehen
   let view = { name: "myday", areaId: null };
   let sortMode = localStorage.getItem("maki-sort") || "manual"; // manual | priority | due
 
@@ -89,8 +89,38 @@
 
   // Liste per Drag sortierbar machen (Pointer-Events, Maus + Touch).
   // handleSel = Greifelement, itemSel = sortierbares Element mit data-Attribut "key".
+  // Sortierung per Ziehen — funktioniert für vertikale Listen UND mehrspaltige
+  // Karten-Grids (Ziele/Orte/Anschaffungen), per Maus und Touch (Pointer-Events).
   function makeSortable(ul, handleSel, itemSel, key, onReorder) {
-    let drag = null;
+    let drag = null, autoScrollTimer = null;
+    // Nächste Einfügeposition in Lesereihenfolge bestimmen (2D-tauglich):
+    // nächstgelegene Karte per Distanz, davor/danach je nach Zeile (Y) bzw. Spalte (X).
+    function targetRef(x, y) {
+      const sibs = [...ul.querySelectorAll(itemSel)].filter(el => el !== drag);
+      let best = null, bestD = Infinity, bestR = null;
+      for (const el of sibs) {
+        const r = el.getBoundingClientRect();
+        const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+        if (d < bestD) { bestD = d; best = el; bestR = r; }
+      }
+      if (!best) return null;                         // leer → ans Ende
+      const cx = bestR.left + bestR.width / 2, cy = bestR.top + bestR.height / 2;
+      let before;
+      if (y < cy - bestR.height * 0.25) before = true;        // klar oberhalb
+      else if (y > cy + bestR.height * 0.25) before = false;  // klar unterhalb
+      else before = x < cx;                                   // gleiche Zeile → Spalte
+      return before ? best : best.nextElementSibling;
+    }
+    // Während des Ziehens am oberen/unteren Rand automatisch scrollen (Touch).
+    function edgeAutoScroll(y) {
+      const sc = ul.closest("#content") || document.scrollingElement;
+      const M = 70;
+      let dy = 0;
+      if (y < M) dy = -Math.ceil((M - y) / 6);
+      else if (y > innerHeight - M) dy = Math.ceil((y - (innerHeight - M)) / 6);
+      clearInterval(autoScrollTimer);
+      if (dy) autoScrollTimer = setInterval(() => sc.scrollBy(0, dy), 16);
+    }
     ul.addEventListener("pointerdown", (e) => {
       const h = e.target.closest(handleSel); if (!h) return;
       const li = h.closest(itemSel); if (!li) return;
@@ -99,11 +129,13 @@
     });
     ul.addEventListener("pointermove", (e) => {
       if (!drag) return;
-      const sibs = [...ul.querySelectorAll(itemSel + ":not(.dragging)")];
-      const after = sibs.find(el => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
-      if (after) ul.insertBefore(drag, after); else ul.appendChild(drag);
+      e.preventDefault();
+      const ref = targetRef(e.clientX, e.clientY);
+      if (ref !== drag) { if (ref) ul.insertBefore(drag, ref); else ul.appendChild(drag); }
+      edgeAutoScroll(e.clientY);
     });
     const end = () => {
+      clearInterval(autoScrollTimer); autoScrollTimer = null;
       if (!drag) return;
       drag.classList.remove("dragging"); drag = null;
       onReorder([...ul.querySelectorAll(itemSel)].map(li => li.dataset[key]));

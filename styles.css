@@ -510,6 +510,11 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--in
 .goal-card:hover .card-drag, .place-card:hover .card-drag, .purchase-card:hover .card-drag { opacity: 1; }
 .card-drag:active { cursor: grabbing; }
 @media (hover: none) { .card-drag { opacity: .9; } } /* Touch: Griff immer sichtbar */
+/* Karte, die gerade gezogen wird — sichtbares Feedback (Maus + Touch) */
+.goal-card.dragging, .place-card.dragging, .purchase-card.dragging {
+  opacity: .85; box-shadow: var(--shadow-lg); transform: scale(1.03);
+  border-color: var(--accent); cursor: grabbing; z-index: 3;
+}
 .goal-card.achieved, .purchase-card.bought { opacity: .68; }
 .purchase-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
